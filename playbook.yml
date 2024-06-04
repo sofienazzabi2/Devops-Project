@@ -1,0 +1,6 @@
+- name: testing ansible
+  hosts: localhost
+  tasks:
+    - name: echo a message
+      debug:
+        msg: "this is working"

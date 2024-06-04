@@ -1,0 +1,443 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front-deployment
+spec:
+  #  replicas: 2
+  selector:
+    matchLabels:
+      app: front
+  template:
+    metadata:
+      labels:
+        app: front
+    spec:
+      containers:
+        - name: front
+          image: khaledsd/loan-front:v1
+          ports:
+            - containerPort: 4200
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-service
+spec:
+  type: ClusterIP
+  selector:
+    app: front  # Switch to Blue deployment
+  ports:
+    - protocol: TCP
+      port: 4200
+      targetPort: 4200
+---
+#apiVersion: apps/v1
+#kind: Deployment
+#metadata:
+#  name: front-deployment-blue
+#spec:
+#  replicas: 2
+#  selector:
+#    matchLabels:
+#      app: front-blue
+#  template:
+#    metadata:
+#      labels:
+#        app: front-blue
+#    spec:
+#      containers:
+#        - name: front
+#          image: khaledsd/loan-front:v2  # New version
+#          ports:
+#            - containerPort: 4200
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: zookeeper-service
+  name: zookeeper-service
+  namespace: kafka
+spec:
+  type: NodePort
+  ports:
+    - name: zookeeper-port
+      port: 2181
+      nodePort: 30181
+      targetPort: 2181
+  selector:
+    app: zookeeper
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: zookeeper
+  name: zookeeper
+  namespace: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+        - image: wurstmeister/zookeeper
+          imagePullPolicy: IfNotPresent
+          name: zookeeper
+          ports:
+            - containerPort: 2181
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kafka-broker
+  name: kafka-service
+  namespace: kafka
+spec:
+  ports:
+    - port: 9092
+  selector:
+    app: kafka-broker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kafka-broker
+  name: kafka-broker
+  namespace: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-broker
+  template:
+    metadata:
+      labels:
+        app: kafka-broker
+    spec:
+      hostname: kafka-broker
+      containers:
+        - env:
+            - name: KAFKA_BROKER_ID
+              value: "1"
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: 10.0.38.179:2181
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka-broker:9092
+          image: wurstmeister/kafka
+          imagePullPolicy: IfNotPresent
+          name: kafka-broker
+          ports:
+            - containerPort: 9092
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discovery-service-deployment
+spec:
+  #  replicas: 2
+  selector:
+    matchLabels:
+      app: discovery-service
+  template:
+    metadata:
+      labels:
+        app: discovery-service
+    spec:
+      containers:
+        - name: discovery-service
+          image: khaledsd/discover:v1
+          ports:
+            - containerPort: 8010
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: discovery-service-service
+spec:
+  type: ClusterIP
+  selector:
+    app: discovery-service
+  ports:
+    - protocol: TCP
+      port: 8010
+      targetPort: 8010
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deployment
+spec:
+  replicas: 2  # Ensure there are at least 2 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: khaledsd/gateway-service:v1
+          ports:
+            - containerPort: 8080
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+spec:
+  type: ClusterIP
+  selector:
+    app: api-gateway
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit-service-deployment
+spec:
+  replicas: 3  # Ensure there are at least 2 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: credit-service
+  template:
+    metadata:
+      labels:
+        app: credit-service
+    spec:
+      containers:
+        - name: credit-service
+          image: khaledsd/credit:v1
+          ports:
+            - containerPort: 8087
+          env:
+            - name: KAFKA_BROKER
+              value: kafka:9092
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: credit-service-service
+spec:
+  type: ClusterIP
+  selector:
+    app: credit-service
+  ports:
+    - protocol: TCP
+      port: 8087
+      targetPort: 8087
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-management-service-deployment
+
+spec:
+  replicas: 3  # Ensure there are at least 2 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: risk-management-service
+  template:
+    metadata:
+      labels:
+        app: risk-management-service
+    spec:
+      containers:
+        - name: risk-management-service
+          image: khaledsd/risque-management-service:v1
+          ports:
+            - containerPort: 8085
+          env:
+            - name: KAFKA_BROKER
+              value: kafka:9092
+            - name: spring.datasource.url
+              value: 'jdbc:mysql://risk-management-service-service:3306/loan_database?createDatabaseIfNotExist=true'
+        - name: mysql
+          image: mysql:latest
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: ''
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: 'yes'
+            - name: 'MYSQL_DATABASE'
+              value: 'gark_club'
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-management-service-service
+spec:
+  type: ClusterIP
+  selector:
+    app: risk-management-service
+  ports:
+    - name: risk-management
+      protocol: TCP
+      port: 8085
+      targetPort: 8085
+    - name: mysql
+      port: 3306
+      protocol: TCP
+      targetPort: 3306
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocr-service-deployment
+spec:
+  #  replicas: 2
+  selector:
+    matchLabels:
+      app: ocr-service
+  template:
+    metadata:
+      labels:
+        app: ocr-service
+    spec:
+      containers:
+        - name: ocr-service
+          image: khaledsd/ocr:v1
+          ports:
+            - containerPort: 8088
+          env:
+            - name: KAFKA_BROKER
+              value: kafka:9092
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocr-service-service
+spec:
+  type: ClusterIP
+  selector:
+    app: ocr-service
+  ports:
+    - protocol: TCP
+      port: 8088
+      targetPort: 8088
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: commercial-service-deployment
+spec:
+  #  replicas: 2
+  selector:
+    matchLabels:
+      app: commercial-service
+  template:
+    metadata:
+      labels:
+        app: commercial-service
+    spec:
+      containers:
+        - name: commercial-service
+          image: khaledsd/commercial:v1
+          ports:
+            - containerPort: 8086
+          env:
+            - name: KAFKA_BROKER
+              value: kafka:9092
+            - name: spring.datasource.url
+              value: 'jdbc:mysql://commercial-service-service:3306/bank_database?createDatabaseIfNotExist=true'
+
+        - name: mysql
+          image: mysql:latest
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: ''
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: 'yes'
+            - name: 'MYSQL_DATABASE'
+              value: 'bank_database'
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: commercial-service-service
+spec:
+  type: ClusterIP
+  selector:
+    app: commercial-service
+  ports:
+    - name: commercial
+      protocol: TCP
+      port: 8086
+      targetPort: 8086
+
+    - name: mysql
+      port: 3306
+      protocol: TCP
+      targetPort: 3306
+
+#---
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: grafana-service
+#  namespace: default
+#spec:
+#  type: LoadBalancer
+#  selector:
+#    app.kubernetes.io/name: grafana
+#  ports:
+#    - protocol: TCP
+#      port: 80
+#      targetPort: 3000

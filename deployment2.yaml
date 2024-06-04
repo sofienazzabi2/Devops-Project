@@ -1,0 +1,242 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-deployment
+  labels:
+    app: webapp
+
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      containers:
+        - name: webapp
+          image: khaledsd/garkclub-front:v2
+          ports:
+            - containerPort: 80  # Changed containerPort to 80
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-service
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80  # Changed targetPort to 80
+      nodePort: 30100
+  selector:
+    app: webapp
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-app
+  labels:
+    app: php
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php
+  template:
+    metadata:
+      labels:
+        app: php
+    spec:
+      containers:
+      - name: php
+        image: phpmyadmin/phpmyadmin:latest
+        ports:
+          - containerPort: 80
+        env:
+          - name: PMA_HOST
+            value: mysql-service  # This should match the name of your MySQL service
+          - name: PMA_PORT
+            value: "3306"  # MySQL port
+          - name: MYSQL_ROOT_PASSWORD
+            value: ''  # Same as used in MySQL depl
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-service
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: php
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-deployment
+  labels:
+    app: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:latest
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: ''
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: 'yes'
+            - name: 'MYSQL_DATABASE'
+              value: 'gark_club'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: back-deployment
+  labels:
+    app: back
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: back
+  template:
+    metadata:
+      labels:
+        app: back
+    spec:
+      containers:
+        - name: back
+          image: khaledsd/garkclub-back:v2
+          ports:
+            - containerPort: 8080  # Changed containerPort to 80
+          env:
+            - name: spring.datasource.url
+              value: 'jdbc:mysql://mysql-service:3306/gark_club'
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: back-service
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: back
+
+
+
+
+#
+#---
+#apiVersion: apps/v1
+#kind: Deployment
+#metadata:
+#  name: webapp-canary-deployment
+#  labels:
+#    app: webapp-canary
+#spec:
+#  replicas: 1
+#  selector:
+#    matchLabels:
+#      app: webapp-canary
+#  template:
+#    metadata:
+#      labels:
+#        app: webapp-canary
+#    spec:
+#      containers:
+#        - name: webapp-canary
+#          image: khaledsd/garkclub-front:v2
+#          ports:
+#            - containerPort: 80  # Changed containerPort to 80
+#---
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: webapp-canary-service
+#spec:
+#  selector:
+#    app: webapp-canary
+#  ports:
+#    - protocol: TCP
+#      port: 80
+#      targetPort: 8080
+#---
+#apiVersion: networking.k8s.io/v1
+#kind: Ingress
+#metadata:
+#  name: webapp-ingress
+#spec:
+#  rules:
+#    - http:
+#        paths:
+#          - path: /
+#            pathType: Prefix
+#            backend:
+#              service:
+#                name: webapp-service
+#                port:
+#                  number: 80
+#
+#---
+#apiVersion: networking.k8s.io/v1
+#kind: Ingress
+#metadata:
+#  name: webapp-ingress-canary
+#
+#spec:
+#  rules:
+#    - http:
+#        paths:
+#          - path: /
+#            pathType: Prefix
+#            backend:
+#              service:
+#                name: webapp-canary-service
+#                port:
+#                  number: 80

@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-deployment
+  labels:
+    app: webapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      containers:
+        - name: front
+          image: khaledsd/garkclub-frontend:v1
+          ports:
+            - containerPort: 4200
+          env:
+            - name: apiUrl
+              value: "http://20.166.245.167:8080"
+            - name: wsUrl
+              value: "ws://20.166.245.167:8080"
+#        - name: canary-front  # Add a new container for the canary version
+#          image: khaledsd/garkclub-frontend:v2  # Use the canary version image
+#          ports:
+#            - containerPort: 4201  # Use a different port for the canary version
+#          env:
+#            - name: apiUrl
+#              value: "http://20.166.245.167:8080"
+#            - name: wsUrl
+#              value: "ws://20.166.245.167:8080"
+        - name: back
+          image: khaledsd/garkclub-back:v2
+          ports:
+            - containerPort: 8080  # Changed containerPort to 80
+          env:
+            - name: spring.datasource.url
+              value: 'jdbc:mysql://webapp-service:3306/gark_club'
+        - name: mysql
+          image: mysql:latest
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: ''
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: 'yes'
+            - name: 'MYSQL_DATABASE'
+              value: 'gark_club'
+        - name: php
+          image: phpmyadmin/phpmyadmin:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: PMA_HOST
+              value: webapp-service  # This should match the name of your MySQL service
+            - name: PMA_PORT
+              value: "3306"  # MySQL port
+            - name: MYSQL_ROOT_PASSWORD
+              value: ''  # Same as used in MySQL deployment
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-service
+spec:
+  type: LoadBalancer
+  ports:
+    - name: front
+      port: 4200
+      protocol: TCP
+      targetPort: 4200
+
+#    - name: canary-front  # Add a port for the canary version
+#      port: 4201  # Use the canary version port
+#      protocol: TCP
+    - name: back
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    - name: mysql
+      port: 3306
+      protocol: TCP
+      targetPort: 3306
+    - name: php
+      port: 9000
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: webapp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+  namespace: default
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: grafana
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
